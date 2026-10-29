@@ -1,0 +1,8 @@
+tmp.*
+*.db
+*.secret
+tmp
+data
+node_modules/
+.*
+!/.gitignore

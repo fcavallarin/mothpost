@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.3.0",
+    "commander": "^15.0.0",
+    "openai": "^7.28.0",
+    "zod": "^4.6.5"
+  }
+}

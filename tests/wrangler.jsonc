@@ -1,0 +1,51 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "sept",
+	"main": "src/index.js",
+	"compatibility_date": "2026-06-01",
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"r2_buckets": [
+		{
+			"binding": "MAILBOX",
+			"bucket_name": "sept"
+		}
+	],
+	"triggers": {
+		"crons": [
+			"*/10 * * * *"
+		]
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "RELAY",
+				"class_name": "DORelay"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"DORelay"
+			]
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "sept",
+			"database_id": "e50e077c-58f1-4771-a5a4-b5062e0d6c33"
+		}
+	]
+}
