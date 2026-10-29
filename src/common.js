@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { randomBytes } from "node:crypto"
 import Database from "better-sqlite3"
-import qrcode from "qrcode-terminal"
 import readline from "node:readline/promises"
 import { stdin, stdout } from "node:process"
 
@@ -68,9 +67,6 @@ export async function pairIfNeeded(sept, name, role) {
     }
 
     const pairingData = Buffer.from(JSON.stringify(deviceData)).toString("base64")
-    // qrcode.generate(JSON.stringify(deviceData), {
-    //   small: true,
-    // })
 
     console.log("Your pairing data:\n")
     console.log(pairingData)

@@ -4,7 +4,7 @@ import { Option } from "commander";
 import { sleep } from "./common.js"
 import { BaseCommand } from "./base-command.js";
 
-export class SeptAGAdmin extends BaseCommand {
+export class MothpostAdmin extends BaseCommand {
   constructor(program) {
     super("admin", "Manage connections and tool permissions", program)
     this.command
@@ -75,10 +75,6 @@ export class SeptAGAdmin extends BaseCommand {
       })
     })
     await this.sept.connect()
-  }
-
-  async stop() {
-    await this.sept.disconnect()
   }
 
   parseDeviceData(b64Data) {

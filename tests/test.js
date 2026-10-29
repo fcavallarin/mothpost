@@ -23,7 +23,7 @@ let septServer, appClient, appClient2, appServer, mcpServer, mcpClient, dataDir,
 const serverOutput = []
 
 
-class SeptAGTest {
+class MothpostTest {
   async init() {
     dataDir = path.resolve(__dirname, "data")
     const serverDir = path.resolve(dataDir, "test-server")
@@ -237,13 +237,34 @@ class SeptAGTest {
     assert(toolCalls.length === before + 1, "Tool not executed after client restart")
   }
 
+  // The MCP server restarts while the server bridge keeps running: calls
+  // fail while it is down, and the bridge reconnects once it is back.
+  // Uses cl1 (my-connection2), which still has tool-1.
+  async test_mcp_server_restart(testId) {
+    mcpServer.closeAllConnections()
+    await new Promise(resolve => mcpServer.close(resolve))
+
+    const before = toolCalls.length
+    const down = await callTool(mcpClient2, "tool-1")
+    assert(!down.ok, `Call succeeded with the MCP server down: ${down.text}`)
+    assert(!/Timeout/.test(down.text), `Expected an error response, got a timeout`)
+
+    mcpServer = await runMCPServer()
+    const res = await waitFor(async () => {
+      const r = await callTool(mcpClient2, "tool-1")
+      return r.ok && r
+    }, 10000, "tool call to succeed after MCP server restart")
+    assert(res.text === "tool-1 executed", `Unexpected result: ${res.text}`)
+    assert(toolCalls.length === before + 1, "Tool not executed after MCP server restart")
+  }
+
 }
 
 async function main() {
-  const septTest = new SeptAGTest()
+  const septTest = new MothpostTest()
   await septTest.init()
 
-  const tests = Object.getOwnPropertyNames(SeptAGTest.prototype)
+  const tests = Object.getOwnPropertyNames(MothpostTest.prototype)
     .filter(t => t.startsWith("test_"))
 
   const errors = []
@@ -267,6 +288,7 @@ async function main() {
       }
       process.exit(1)
     }
+    console.log("ALL TESTS PASSED")
     process.exit(0)
   }
 
@@ -287,7 +309,6 @@ async function main() {
     console.log("---------------")
   }
   exit()
-  console.log("ALL TESTS PASSED")
 }
 
 main()

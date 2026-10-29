@@ -59,6 +59,8 @@ cd mothpost
 npm install
 ```
 
+Each component reads `config.json` from its working directory. [`config.example.json`](config.example.json) lists every option; copy it and keep only the section for the component you run (`server`, `client`, or none for the Admin). `config.json` is git-ignored.
+
 ### 2. Configure the server
 
 On the machine hosting your MCP server, create `config.json`:
@@ -175,6 +177,8 @@ node src/cli.js admin connection my-connection
 
 Revocation blocks subsequent calls even if the agent cached the old tool list.
 
+The server bridge also follows the MCP server: when it adds or removes tools (`notifications/tools/list_changed`), the new list is reported to the Admin without restarting the bridge, and if the MCP server restarts, the bridge reconnects on the next call.
+
 Agents don't need to be restarted after a grant or revoke: the client bridge sends a `notifications/tools/list_changed` notification, and agents that listen for it refresh their tool list automatically. This requires an agent using the 2026-07-28 MCP protocol revision; agents on older revisions see the updated list the next time they reconnect or run tool discovery.
 
 ## Multiple Agents
@@ -272,6 +276,12 @@ Mobile App / User
 ```
 
 The underlying protocol already supports secure user-to-agent messaging. **Chat integration is not currently a feature of `mothpost` itself.**
+
+## Security Notes
+
+- Permissions are enforced per **connection** (one client bridge ↔ one server bridge), both by the server bridge, which lists and executes only granted tools, and by SEPT's access control, which rejects calls to non-granted tools before they reach the server bridge.
+- The client bridge's local MCP endpoint has no authentication of its own: any process that can reach `listenHost:port` can use the tools granted to that connection. Keep it bound to `127.0.0.1` (the default), and give agents that must not share permissions separate client bridges.
+- The relay sees only encrypted payloads and routing metadata (which devices exchange events, and when).
 
 ## Relay Configuration
 

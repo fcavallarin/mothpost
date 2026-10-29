@@ -1,0 +1,19 @@
+{
+  "sept": {
+    "restEndpoint": "https://sept.filippo-572.workers.dev",
+    "logLevel": "info"
+  },
+  "client": {
+    "id": "my-agent",
+    "listenHost": "127.0.0.1",
+    "port": 8001,
+    "requestTimeoutMs": 30000
+  },
+  "server": {
+    "id": "my-server",
+    "transport": "streamable-http",
+    "url": "http://localhost:8931/mcp",
+    "maxRequestAgeMs": 60000,
+    "clockSkewMs": 5000
+  }
+}

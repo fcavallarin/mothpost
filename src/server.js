@@ -1,9 +1,11 @@
 import {
   Client,
+  ProtocolError,
+  SdkHttpError,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 
-import { pairIfNeeded } from "./common.js";
+import { pairIfNeeded, sleep } from "./common.js";
 import { BaseCommand } from "./base-command.js";
 
 export class SeptMcpServer extends BaseCommand {
@@ -11,7 +13,7 @@ export class SeptMcpServer extends BaseCommand {
   constructor(program) {
     super("server", "Run the server bridge in front of an existing MCP server", program)
     this.command
-      .action(this.action("start"))
+      .action(this.daemonAction("start"))
   }
 
 
@@ -19,9 +21,11 @@ export class SeptMcpServer extends BaseCommand {
     this.service = this.config.server
     this.mcpClient = null;
     this.mcpTransport = null;
-
+    this.mcpConnecting = null;
     this.tools = [];
-    this.stopping = false;
+    this.registeredTools = new Set();
+    this.ready = false;
+
     let networkId = await this.sept.getNetworkId()
     if (!networkId) {
 
@@ -35,24 +39,16 @@ export class SeptMcpServer extends BaseCommand {
     }
     console.log(`NetworkID: ${networkId}`)
 
-    await this.connectMcp();
-
-    const { tools } = await this.mcpClient.listTools();
-
-    this.tools = tools;
-    this.registerMcpTools();
+    await this.ensureMcp();
     this.registerToolsList()
 
     await this.sept.connect()
   }
 
-  async stop() {
-    await this.sept.disconnect()
-  }
-
 
   async start() {
     await this.waitInit()
+    this.ready = true
 
     console.log(
       `[${this.service.id}] Discovered MCP tools:`,
@@ -65,21 +61,25 @@ export class SeptMcpServer extends BaseCommand {
       `[${this.service.id}] SEPT gateway connected as ${deviceId}`,
     );
 
-    await this.sentToolsToAdmins()
+    await this.sendToolsToAdmins()
   }
 
   async waitInit() {
-
+    const ownDeviceId = await this.sept.getDeviceId()
     while (true) {
       const acl = await this.sept.getACL()
-      if (acl.find(a => a.policy.allowedEventTypes.includes("tools.list"))) {
+      const granted = acl.some(edge =>
+        edge.srcDeviceId === ownDeviceId &&
+        (edge.policy?.allowedEventTypes ?? []).includes("tools.list")
+      )
+      if (granted) {
         break
       }
-      await new Promise(r => setTimeout(r, 500))
+      await sleep(500)
     }
   }
 
-  async sentToolsToAdmins() {
+  async sendToolsToAdmins() {
     const admins = await this.sept.getAdmins()
     await this.sept.send("tools.list", { tools: this.tools }, admins.map(a => a.deviceId))
   }
@@ -92,8 +92,7 @@ export class SeptMcpServer extends BaseCommand {
       );
     }
 
-
-    this.mcpClient = new Client(
+    const client = new Client(
       {
         name: `mothpost-${this.service.id}`,
         version: "0.1.0",
@@ -102,19 +101,30 @@ export class SeptMcpServer extends BaseCommand {
         versionNegotiation: {
           mode: "auto",
         },
+        // Follow notifications/tools/list_changed from the MCP server, so
+        // added or removed tools don't require restarting the bridge.
+        listChanged: {
+          tools: {
+            onChanged: (error, tools) => {
+              if (error) {
+                console.error(`[${this.service.id}] Failed to refresh MCP tools:`, error)
+                return
+              }
+              void this.setTools(tools ?? [])
+            },
+          },
+        },
       },
     );
 
-
-    this.mcpTransport = new StreamableHTTPClientTransport(
+    const transport = new StreamableHTTPClientTransport(
       new URL(this.service.url),
     );
 
+    await client.connect(transport);
 
-    await this.mcpClient.connect(
-      this.mcpTransport,
-    );
-
+    this.mcpClient = client
+    this.mcpTransport = transport
 
     console.log(
       `[${this.service.id}] Connected to MCP server at ${this.service.url}`,
@@ -122,25 +132,89 @@ export class SeptMcpServer extends BaseCommand {
 
     console.log(
       `[${this.service.id}] MCP protocol era:`,
-      this.mcpClient.getProtocolEra(),
+      client.getProtocolEra(),
     );
 
     console.log(
       `[${this.service.id}] MCP server:`,
-      this.mcpClient.getServerVersion(),
+      client.getServerVersion(),
     );
+
+    const { tools } = await client.listTools();
+    await this.setTools(tools)
   }
 
+  async ensureMcp() {
+    if (this.mcpClient) {
+      return this.mcpClient
+    }
+    if (!this.mcpConnecting) {
+      this.mcpConnecting = this.connectMcp()
+        .finally(() => { this.mcpConnecting = null })
+    }
+    await this.mcpConnecting
+    return this.mcpClient
+  }
+
+  async dropMcp() {
+    const client = this.mcpClient
+    const transport = this.mcpTransport
+    this.mcpClient = null
+    this.mcpTransport = null
+    try { await transport?.terminateSession() } catch {}
+    try { await client?.close() } catch {}
+  }
+
+  async withMcp(fn, { idempotent = false } = {}) {
+    const client = await this.ensureMcp()
+    try {
+      return await fn(client)
+    } catch (error) {
+      if (error instanceof ProtocolError) {
+        // The MCP server answered with a JSON-RPC error: the session is fine.
+        throw error
+      }
+      console.warn(
+        `[${this.service.id}] MCP request failed (${error.message}), reconnecting`,
+      )
+      if (this.mcpClient === client) {
+        await this.dropMcp()
+      }
+      const sessionExpired = error instanceof SdkHttpError && error.status === 404
+      if (!idempotent && !sessionExpired) {
+        throw error
+      }
+      return await fn(await this.ensureMcp())
+    }
+  }
+
+  async setTools(tools) {
+    const names = list => list.map(t => t.name).sort().join("\n")
+    const changed = names(tools) !== names(this.tools)
+      || JSON.stringify(tools) !== JSON.stringify(this.tools)
+
+    this.tools = tools
+    this.registerMcpTools()
+
+    if (changed && this.ready) {
+      console.log(
+        `[${this.service.id}] MCP tools changed:`,
+        tools.map(tool => tool.name),
+      )
+      try {
+        await this.sendToolsToAdmins()
+      } catch (error) {
+        console.error(`[${this.service.id}] Failed to send tools to admins:`, error)
+      }
+    }
+  }
 
   registerToolsList() {
 
     this.sept.register(
       "mcp.tools.list",
-
       async event => {
-
         const requestId = event.payload?.requestId;
-
         if (!requestId) {
           console.error(
             `[${this.service.id}] mcp.tools.list: missing requestId`,
@@ -203,8 +277,13 @@ export class SeptMcpServer extends BaseCommand {
 
   registerMcpTools() {
     for (const tool of this.tools) {
+      if (this.registeredTools.has(tool.name)) {
+        continue
+      }
+      this.registeredTools.add(tool.name)
 
-      const eventType = `mcp.tools.call.${tool.name}`;
+      const toolName = tool.name
+      const eventType = `mcp.tools.call.${toolName}`;
 
       this.sept.register(
         eventType,
@@ -224,8 +303,17 @@ export class SeptMcpServer extends BaseCommand {
             return;
           }
 
+          if (!this.tools.some(t => t.name === toolName)) {
+            await this.sendError(
+              event,
+              requestId,
+              new Error(`Tool ${toolName} is no longer exposed by the MCP server`),
+            );
+            return;
+          }
+
           console.log(
-            `[${this.service.id}] Calling ${tool.name}`,
+            `[${this.service.id}] Calling ${toolName}`,
             {
               requestId,
               mcpRequestId,
@@ -235,10 +323,10 @@ export class SeptMcpServer extends BaseCommand {
           );
 
           try {
-            const result = await this.mcpClient.callTool({
-              name: tool.name,
+            const result = await this.withMcp(client => client.callTool({
+              name: toolName,
               arguments: arguments_,
-            });
+            }));
 
             await this.sendResult(
               event,
@@ -266,7 +354,7 @@ export class SeptMcpServer extends BaseCommand {
   }
 
   //  Returns true when a request must not be executed because the
-  //  client has already given up on it, or its timestamp is implausible.
+  //  client has already given up on it
   isStale(event, eventType) {
     const { maxRequestAgeMs, clockSkewMs } = this.service
     const nowMs = Date.now()
@@ -329,7 +417,6 @@ export class SeptMcpServer extends BaseCommand {
 
 
   async stop() {
-    return
     if (this.stopping) {
       return;
     }
@@ -337,37 +424,18 @@ export class SeptMcpServer extends BaseCommand {
     this.stopping = true;
 
     console.log(
-      `[${this.service.id}] Stopping...`,
+      `[${this.service?.id}] Stopping...`,
     );
 
-    if (this.sept) {
-      try {
-        await this.sept.disconnect();
-      } catch (error) {
-        console.error(
-          `[${this.service.id}] SEPT disconnect failed:`,
-          error,
-        );
-      }
+    try {
+      await this.sept?.disconnect();
+    } catch (error) {
+      console.error(
+        `[${this.service?.id}] SEPT disconnect failed:`,
+        error,
+      );
     }
 
-    if (this.mcpTransport) {
-      try {
-        await this.mcpTransport.terminateSession();
-      } catch {
-      }
-    }
-
-
-    if (this.mcpClient) {
-      try {
-        await this.mcpClient.close();
-      } catch (error) {
-        console.error(
-          `[${this.service.id}] MCP close failed:`,
-          error,
-        );
-      }
-    }
+    await this.dropMcp()
   }
 }

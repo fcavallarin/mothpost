@@ -2,7 +2,7 @@
 
 import { Command } from "commander";
 
-import {SeptAGAdmin} from './admin.js'
+import { MothpostAdmin } from "./admin.js";
 import { SeptMcpClient } from "./client.js";
 import { SeptMcpServer } from "./server.js";
 
@@ -16,7 +16,7 @@ program
 
 new SeptMcpClient(program)
 new SeptMcpServer(program)
-new SeptAGAdmin(program)
+new MothpostAdmin(program)
 
 program.parseAsync().catch(error => {
   console.error(error);

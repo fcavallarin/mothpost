@@ -1,14 +1,19 @@
 import fs from "node:fs";
 
+export const DEFAULT_REST_ENDPOINT = "https://sept.filippo-572.workers.dev"
+
 export function loadConfig(options = {}) {
   const configFile = options.config ?? "./config.json";
+  if (options.config !== undefined && !fs.existsSync(configFile)) {
+    throw new Error(`Configuration file not found: ${configFile}`)
+  }
   const fileConfig = fs.existsSync(configFile)
     ? JSON.parse(fs.readFileSync(configFile, "utf8"))
     : {};
 
   const config = {
     sept: {
-      restEndpoint: fileConfig.sept?.restEndpoint,
+      restEndpoint: fileConfig.sept?.restEndpoint || DEFAULT_REST_ENDPOINT,
       logLevel: fileConfig.sept?.logLevel ?? "info",
       dataDir: fileConfig.sept?.dataDir ?? ".",
     },
@@ -20,8 +25,8 @@ export function loadConfig(options = {}) {
     },
     server: {
       id: fileConfig.server?.id ?? "server1",
+      transport: "streamable-http",
       maxRequestAgeMs: 60000,
-      // Tolerated clock difference between endpoints
       clockSkewMs: 5000,
       ...fileConfig.server,
     },

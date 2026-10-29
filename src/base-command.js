@@ -45,13 +45,43 @@ export class BaseCommand {
     await this[method](...args.reverse(), options)
   }
 
-
   action(method) {
-    return (...p) => this.run(method, p).then(() => this.stop())
+    return async (...p) => {
+      try {
+        await this.run(method, p)
+      } finally {
+        await this.stop()
+      }
+    }
   }
 
-  async init(){}
+  daemonAction(method) {
+    return async (...p) => {
+      try {
+        await this.run(method, p)
+      } catch (error) {
+        await this.stop()
+        throw error
+      }
 
-  async stop(){}
+      const shutdown = async signal => {
+        console.log(`Received ${signal}, stopping...`)
+        try {
+          await this.stop()
+        } catch (error) {
+          console.error("Error while stopping:", error)
+          process.exitCode = 1
+        }
+        process.exit()
+      }
+      process.once("SIGINT", shutdown)
+      process.once("SIGTERM", shutdown)
+    }
+  }
 
+  async init() {}
+
+  async stop() {
+    await this.sept?.disconnect()
+  }
 }

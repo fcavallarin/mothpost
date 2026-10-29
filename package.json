@@ -1,7 +1,42 @@
 {
   "name": "mothpost",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Bridge AI agents and MCP servers across networks, with per-tool permissions, over the SEPT encrypted relay",
   "type": "module",
+  "license": "MIT",
+  "author": "Filippo Cavallarin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fcavallarin/mothpost.git"
+  },
+  "homepage": "https://github.com/fcavallarin/mothpost#readme",
+  "bugs": {
+    "url": "https://github.com/fcavallarin/mothpost/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "e2ee",
+    "relay",
+    "sept",
+    "authorization"
+  ],
+  "bin": {
+    "mothpost": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "config.example.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start:client": "node src/cli.js client",
+    "start:server": "node src/cli.js server",
+    "test": "cd tests && npm install && node test.js"
+  },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.1.0",
     "@modelcontextprotocol/express": "^2.0.1",
@@ -11,7 +46,6 @@
     "better-sqlite3": "^13.0.3",
     "commander": "^15.0.0",
     "express": "^5.2.1",
-    "picocolors": "^1.1.1",
-    "qrcode-terminal": "^0.12.0"
+    "picocolors": "^1.1.1"
   }
 }

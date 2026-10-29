@@ -13,7 +13,7 @@ export class SeptMcpClient extends BaseCommand {
   constructor(program) {
     super("client", "Run the client bridge: a local MCP endpoint for an AI agent", program)
     this.command
-      .action(this.action("start"))
+      .action(this.daemonAction("start"))
   }
 
 
@@ -49,12 +49,6 @@ export class SeptMcpClient extends BaseCommand {
 
     await this.sept.connect()
   }
-
-  async stop() {
-    await this.sept.disconnect()
-  }
-
-
 
   async start() {
 
@@ -115,7 +109,6 @@ export class SeptMcpClient extends BaseCommand {
       console.error(
         `[${this.service.id}] Cannot listen on ${listenHost}:${port}: ${error.message}`
       )
-      // The SEPT connection would otherwise keep the process alive.
       process.exit(1)
     }
 
@@ -226,7 +219,6 @@ export class SeptMcpClient extends BaseCommand {
         {
           requestId,
           // Lets the server drop the request once we've stopped waiting
-          // for it (e.g. delivered after the gateway was offline).
           timeoutMs: this.service.requestTimeoutMs,
           ...payload,
         },
@@ -258,8 +250,6 @@ export class SeptMcpClient extends BaseCommand {
       return
     }
 
-    // Bump the generation so an in-flight mcp.tools.list issued under the
-    // old policy cannot repopulate the cache with a stale list.
     this.toolsGeneration++
     this.tools = null
     this.toolsRequest = null
@@ -306,7 +296,7 @@ export class SeptMcpClient extends BaseCommand {
 
     const server = new McpServer(
       {
-        name: `SEPT MCP Proxy (${this.service.id})`,
+        name: `mothpost (${this.service.id})`,
         version: "0.1.0",
       },
       {
@@ -362,16 +352,15 @@ export class SeptMcpClient extends BaseCommand {
   }
 
   async stop() {
-    return
     if (this.stopping) {
       return
     }
 
     this.stopping = true
 
-    console.log(`[${this.service.id}] Stopping...`)
+    console.log(`[${this.service?.id}] Stopping...`)
 
-    for (const [requestId, request] of this.pending) {
+    for (const [requestId, request] of this.pending ?? []) {
       clearTimeout(request.timeout)
 
       request.reject(
@@ -379,9 +368,10 @@ export class SeptMcpClient extends BaseCommand {
       )
     }
 
-    this.pending.clear()
+    this.pending?.clear()
 
     if (this.httpServer) {
+      this.httpServer.closeAllConnections()
       await new Promise((resolve, reject) => {
         this.httpServer.close(error => {
           if (error) {
@@ -394,7 +384,7 @@ export class SeptMcpClient extends BaseCommand {
     }
 
     if (this.mcpHandler) {
-      await this.mcpHandler.close()
+      await this.mcpHandler.close?.()
     }
 
     if (this.sept) {
