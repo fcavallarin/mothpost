@@ -187,6 +187,28 @@ class MothpostTest {
     assert(toolCalls.length === before, "Revoked tool executed on the MCP server")
   }
 
+  // revoke-all must also revoke grants for tools the server doesn't expose
+  // (e.g. removed temporarily), or they'd become effective again when the
+  // tool reappears. Uses cl0 (my-connection), where tool-1 is already revoked.
+  async test_revoke_all_unexposed(testId) {
+    let admin = run("admin", "grant-tool", "my-connection", "ghost-tool")
+    await admin.done
+
+    admin = run("admin", "connection", "my-connection")
+    await admin.wait(/ghost-tool .*not exposed/)
+    await admin.done
+
+    admin = run("admin", "revoke-all", "my-connection")
+    await admin.wait(/Revoked: ghost-tool/)
+    await admin.done
+
+    admin = run("admin", "connection", "my-connection")
+    await admin.done
+    const out = admin.output().join("\n")
+    assert(!/ghost-tool/.test(out), `ghost-tool still granted:\n${out}`)
+    assert(!/✓/.test(out), `Some tool still granted:\n${out}`)
+  }
+
   // A call made while the server bridge is offline must not be executed when
   // the bridge comes back after the client's timeout (8s in writeConfig).
   // Uses cl1 (my-connection2), which still has tool-1.

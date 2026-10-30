@@ -4,6 +4,8 @@ import { Option } from "commander";
 import { sleep } from "./common.js"
 import { BaseCommand } from "./base-command.js";
 
+const TOOL_CALL_PREFIX = "mcp.tools.call."
+
 export class MothpostAdmin extends BaseCommand {
   constructor(program) {
     super("admin", "Manage connections and tool permissions", program)
@@ -148,14 +150,22 @@ export class MothpostAdmin extends BaseCommand {
     return server?.tools ?? []
   }
 
+  async getEnabledTools(connection) {
+    const acl = await this.sept.getACL()
+    const edge = acl.find(a =>
+      a.srcDeviceId === connection.client &&
+      a.dstDeviceId === connection.server
+    )
+    return (edge?.policy?.allowedEventTypes ?? [])
+      .filter(type => type.startsWith(TOOL_CALL_PREFIX))
+      .map(type => type.slice(TOOL_CALL_PREFIX.length))
+  }
+
   async grantTool(connectionName, tool) {
     const connection = await this.getConnection(connectionName)
     await this.sept.grant(connection.client, connection.server, [`mcp.tools.call.${tool}`])
   }
 
-  // The server reports its tools to admins only after pairing completes, so
-  // right after `connect` the list may not have reached this admin yet.
-  // Wait for it briefly instead of silently granting/revoking nothing.
   async getConnectionWithTools(connectionName, timeoutMs = 10000) {
     const connection = await this.getConnection(connectionName)
     const start = Date.now()
@@ -181,9 +191,15 @@ export class MothpostAdmin extends BaseCommand {
   }
 
   async revokeAll(connectionName) {
-    const { connection, tools } = await this.getConnectionWithTools(connectionName)
-    const eventTypes = tools.map(t => `mcp.tools.call.${t.name}`)
+    const connection = await this.getConnection(connectionName)
+    const enabled = await this.getEnabledTools(connection)
+    if (enabled.length === 0) {
+      console.log(`No tools granted on ${connectionName}`)
+      return
+    }
+    const eventTypes = enabled.map(name => `${TOOL_CALL_PREFIX}${name}`)
     await this.sept.revoke(connection.client, connection.server, eventTypes)
+    console.log(`Revoked: ${enabled.join(", ")}`)
   }
 
 
@@ -195,14 +211,19 @@ export class MothpostAdmin extends BaseCommand {
   async connection(connectionName) {
     const c = await this.getConnection(connectionName)
     const tools = await this.getServerTools(c.server)
-    const acl = await this.sept.getACL()
-    const enabledTools = acl.find(a => a.srcDeviceId === c.client && a.dstDeviceId === c.server)?.policy?.allowedEventTypes || []
+    const enabled = new Set(await this.getEnabledTools(c))
     console.log(`Client: ${c.client}`)
     console.log(`Server: ${c.server}`)
     console.log(`Tools:`)
     for (const t of tools) {
-      const enabled = enabledTools.includes(`mcp.tools.call.${t.name}`)
-      console.log(`  ${enabled ? pc.green('✓') : pc.red('✗')} ${t.name}`)
+      console.log(`  ${enabled.has(t.name) ? pc.green('✓') : pc.red('✗')} ${t.name}`)
+    }
+
+    const exposed = new Set(tools.map(t => t.name))
+    for (const name of enabled) {
+      if (!exposed.has(name)) {
+        console.log(`  ${pc.yellow('!')} ${name} ${pc.dim('(granted, not exposed by the server)')}`)
+      }
     }
   }
 }
