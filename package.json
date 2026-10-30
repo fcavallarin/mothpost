@@ -1,6 +1,6 @@
 {
   "name": "mothpost",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bridge AI agents and MCP servers across networks, with per-tool permissions, over the SEPT encrypted relay",
   "type": "module",
   "license": "MIT",

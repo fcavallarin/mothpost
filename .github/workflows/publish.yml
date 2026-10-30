@@ -1,0 +1,40 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - run: npm ci
+
+      - name: Verify release version
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const version = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+            if (pkg.version !== version) {
+              console.error(`package.json version ${pkg.version} != tag ${version}`);
+              process.exit(1);
+            }
+            console.log(`Release version: ${version}`);
+          '
+
+      - run: npm run test
+      - run: npm publish

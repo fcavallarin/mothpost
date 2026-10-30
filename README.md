@@ -32,7 +32,7 @@ MCP prompts, resources, and notifications are intentionally out of scope for the
 A newly connected client has no tools available by default. An administrator can grant access to one tool:
 
 ```bash
-node src/cli.js admin grant-tool my-connection get_door_state
+npx mothpost admin grant-tool my-connection get_door_state
 ```
 
 The client can then discover and invoke `get_door_state`. Revoking the permission prevents subsequent invocations, even if the agent still has the tool in a cached tool list.
@@ -51,15 +51,17 @@ These components can run on separate networks. No VPN or publicly exposed MCP en
 
 ### 1. Installation
 
-On each machine running `mothpost`:
+`mothpost` requires Node.js 20 or later. No installation is needed: the commands below run it with `npx`, which downloads it on first use.
+
+If you run it often (for example the Admin commands), you can install it globally and use `mothpost` instead of `npx mothpost`:
 
 ```bash
-git clone https://github.com/fcavallarin/mothpost.git
-cd mothpost
-npm install
+npm install -g mothpost
 ```
 
-Each component reads `config.json` from its working directory. [`config.example.json`](config.example.json) lists every option; copy it and keep only the section for the component you run (`server`, `client`, or none for the Admin). `config.json` is git-ignored.
+Each component reads `config.json` from its working directory, so give each one its own directory. [`config.example.json`](config.example.json) lists every option; copy the section for the component you run (`server`, `client`, or none for the Admin).
+
+To run from source instead, clone the repository, run `npm install`, and replace `npx mothpost` with `node src/cli.js` (`config.json` is git-ignored).
 
 ### 2. Configure the server
 
@@ -80,7 +82,7 @@ Replace the URL with your MCP server's local endpoint and ensure that it is runn
 Start the bridge:
 
 ```bash
-node src/cli.js server
+npx mothpost server
 ```
 
 On its first run, it displays Base64-encoded pairing data and prompts for a pairing PIN. Leave the terminal running; pairing will be completed in step 4.
@@ -102,19 +104,19 @@ On the machine running your AI agent, create `config.json`:
 Start the local MCP bridge:
 
 ```bash
-node src/cli.js client
+npx mothpost client
 ```
 
 On first run, it also displays pairing data and asks for a PIN. Leave this terminal running.
 
-**Note:** The server, client, and Admin each need their own working directory and `config.json`. If you run all three on the same machine, use separate copies/directories to avoid conflicting configurations.
+**Note:** The server, client, and Admin each need their own working directory and `config.json`, also when they run on the same machine: their identities and state are stored in that directory.
 
 ### 4. Connect the client and server
 
 In a third terminal, connect them using the pairing data displayed by each endpoint:
 
 ```bash
-node src/cli.js admin connect my-connection \
+npx mothpost admin connect my-connection \
   "<CLIENT_PAIRING_DATA>" \
   --new-server "<SERVER_PAIRING_DATA>"
 ```
@@ -128,19 +130,19 @@ Once pairing completes, the endpoints have the permissions needed to exchange MC
 Inspect the connection and its available tools:
 
 ```bash
-node src/cli.js admin connection my-connection
+npx mothpost admin connection my-connection
 ```
 
 Grant one tool:
 
 ```bash
-node src/cli.js admin grant-tool my-connection get_door_state
+npx mothpost admin grant-tool my-connection get_door_state
 ```
 
 Replace `get_door_state` with a tool exposed by your MCP server. To grant all available tools:
 
 ```bash
-node src/cli.js admin grant-all my-connection
+npx mothpost admin grant-all my-connection
 ```
 
 Tool permissions are enforced by the bridge's underlying access-control layer, independently of the MCP server's own authorization mechanisms.
@@ -160,19 +162,19 @@ The agent can discover and invoke only the tools permitted for its connection. R
 Revoke access to one tool:
 
 ```bash
-node src/cli.js admin revoke-tool my-connection get_door_state
+npx mothpost admin revoke-tool my-connection get_door_state
 ```
 
 Or revoke all tools:
 
 ```bash
-node src/cli.js admin revoke-all my-connection
+npx mothpost admin revoke-all my-connection
 ```
 
 Inspect the connection again:
 
 ```bash
-node src/cli.js admin connection my-connection
+npx mothpost admin connection my-connection
 ```
 
 Revocation blocks subsequent calls even if the agent cached the old tool list.
@@ -188,9 +190,9 @@ Each agent gets its own connection, with its own tool permissions. There are two
 **Shared server bridge.** Start a new client for the agent (with its own `id` and `port`), find the server's device ID, and connect the client to the existing bridge:
 
 ```bash
-node src/cli.js admin connection my-connection    # prints "Server: <SERVER_DEVICE_ID>"
+npx mothpost admin connection my-connection    # prints "Server: <SERVER_DEVICE_ID>"
 
-node src/cli.js admin connect my-second-agent \
+npx mothpost admin connect my-second-agent \
   "<CLIENT_PAIRING_DATA>" \
   --existing-server <SERVER_DEVICE_ID>
 ```
@@ -320,7 +322,7 @@ This is planned work, **not a feature of the current prototype**.
 
 ## Status
 
-`mothpost` is an experimental prototype/demo and is not yet published on npm.
+`mothpost` is an experimental prototype/demo. It is published on [npm](https://www.npmjs.com/package/mothpost), but its CLI and configuration may change between versions.
 
 ## Related
 
